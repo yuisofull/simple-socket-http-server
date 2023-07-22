@@ -2,15 +2,18 @@ Chạy server:
 ```
 python3 webserver.py <host> <port>
 ```
+
 Tính năng Upload:
 ```
 curl -H "File-Name: <tên file>" --data-binary @<đường dẫn tới file> <url>
 ```
+
 File sẽ được lưu dưới tên file.
 Tính năng Download:
 ```
 curl <url>/<tên file vừa upload>
 ```
+
  -Hoặc lên browser và vô <url>/<tên file vừa upload>
 
 ===
