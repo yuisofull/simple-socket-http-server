@@ -41,7 +41,7 @@ def proxy(conn, proxy_url,data):
     headers = data.split(b'\r\n\r\n')
     temp = headers[0].split(b'\r\n')
     temp[0] = firstline.encode()
-    temp = b'\r\n'.join(temp) + b"\r\n\r\n" +headers[1]
+    temp = b'\r\n'.join(temp)+ b'\r\n'+ b'Connection: Close' + b"\r\n\r\n" +headers[1]
     #proxy_res= firstline.encode() + temp.encode()
     print(f"SERVER REQUEST: \n{temp.decode()}")
     sv.send(temp)
@@ -49,7 +49,7 @@ def proxy(conn, proxy_url,data):
         # receive data from web server
         count = 1
         res = sv.recv(4096)
-        if not res: break
+        if (len(res)<=0): break
         print(f"SERVER RESPONES: \n{res.decode()}")
         conn.send(res) # send to browser/client   
         print(count)
@@ -74,7 +74,7 @@ def process_get_request(conn, req_url,data):
     except IOError:
         # Handle proxy 
         proxy(conn, req_url,data)
-        return ctype, resdata, True
+        return ctype, b'', True
 
     return ctype, resdata, False
 
