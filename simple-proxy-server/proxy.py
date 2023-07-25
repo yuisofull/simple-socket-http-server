@@ -9,9 +9,11 @@ def send_response(conn, status_code, content_type, response_data):
 
     response = header.encode() + response_data
     conn.send(response)
+    return response.decode()
 
 def proxy(conn, proxy_url,data):
     request = data.split(b'\r\n')[0]
+    req_method = request.split(b' ')[0]
     http_pos = proxy_url.decode().find("://") # find pos of ://
     if (http_pos==-1):
         temp = proxy_url.decode()
@@ -38,7 +40,7 @@ def proxy(conn, proxy_url,data):
     sv = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
     #s.settimeout(config['CONNECTION_TIMEOUT'])
     sv.connect((webserver, port))
-    firstline = f"GET {tail} {request.split(b' ')[2].decode()}"
+    firstline = f"{req_method.decode()} {tail} {request.split(b' ')[2].decode()}"
     headers = data.split(b'\r\n\r\n')
     temp = headers[0].split(b'\r\n')
     temp[0] = firstline.encode()
@@ -78,19 +80,23 @@ def process_get_request(conn, req_url,data):
     return ctype, resdata, False
 
 def process_post_request(conn, req_url, data):
+    
     if req_url == b"submit":
         # Handle form submission
         try:
-            post_data = data.split(b'\r\n\r\n', 1)[1]
-            with open("post.txt", 'wb') as f:
-                f.write(post_data)
+            post_data = data.split(b'\r\n\r\n')[1]
+            with open("post.txt", 'w') as f:
+                f.write(post_data.decode())
             resdata = "success uploading".encode()
             ctype = "text/plain"
+            temp=send_response(conn, "200", ctype, resdata)
+            print(f"RESPONSE: {temp}")
+            conn.close()
         except IOError:
             with open("error403.html", 'rb') as f:
                 resdata = f.read()
             ctype = "text/html"
-            send_response(conn, b"403 Forbidden", ctype, resdata)
+            send_response(conn, "403 Forbidden", ctype, resdata)
             conn.close()
     elif req_url == b"upload":
         # Handle file upload 
@@ -105,12 +111,15 @@ def process_post_request(conn, req_url, data):
         send_response(conn, b"403 Forbidden", ctype, resdata)
         conn.close()
     else:
-        # Return a 403 Forbidden response for unknown POST requests
-        with open("error403.html", 'r') as f:
-            resdata = f.read()
-        ctype = "text/html"
-        send_response(conn, b"403 Forbidden", ctype, resdata.encode())
-        conn.close()
+        try:
+            proxy(conn, req_url, data)
+        except:
+            # Return a 403 Forbidden response for unknown POST requests
+            with open("error403.html", 'r') as f:
+                resdata = f.read()
+            ctype = "text/html"
+            send_response(conn, b"403 Forbidden", ctype, resdata.encode())
+            conn.close()
 
 def process(conn, addr):
     while True:
@@ -129,18 +138,18 @@ def process(conn, addr):
         if req_method == b'GET':
             ctype, resdata, proxy = process_get_request(conn, req_url,data)
         elif req_method == b'POST':
-            process_post_request(conn, req_url, data)
+            process_post_request(conn, req_url.strip(b'/'), data)
             return
         else:
             # Return a 403 Forbidden response for unsupported methods
             with open("error403.html", 'r') as f:
                 resdata = f.read()
             ctype = "text/html"
-            send_response(conn, b"403 Forbidden", ctype, resdata.encode())
+            send_response(conn, "403 Forbidden", ctype, resdata.encode())
             conn.close()
             return
         if proxy == False:    
-            send_response(conn, b"200", ctype, resdata)
+            send_response(conn, "200", ctype, resdata)
             conn.close()
         return
 
