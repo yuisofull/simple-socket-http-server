@@ -1,5 +1,6 @@
 import socket
 import sys
+import threading
 
 def send_response(conn, status_code, content_type, response_data):
     header = f"HTTP/1.1 {status_code}\r\n"
@@ -47,14 +48,12 @@ def proxy(conn, proxy_url,data):
     sv.send(temp)
     while True:
         # receive data from web server
-        count = 1
         res = sv.recv(4096)
         if (len(res)<=0): break
         print(f"SERVER RESPONES: \n{res.decode()}")
         conn.send(res) # send to browser/client   
-        print(count)
-        count=count+1
     sv.close()
+    conn.close()
 
 def process_get_request(conn, req_url,data):
     req_url1 = req_url.strip(b'/')
@@ -113,6 +112,38 @@ def process_post_request(conn, req_url, data):
         send_response(conn, b"403 Forbidden", ctype, resdata.encode())
         conn.close()
 
+def process(conn, addr):
+    while True:
+        data = conn.recv(4096)
+        if not data:
+            return
+
+        print(data.decode())
+
+        request = data.split(b'\r\n')[0]
+        req_method = request.split(b' ')[0]
+        req_url = request.split(b' ')[1]
+        #proxy_url = request.split(b' ')[1]
+        print(f"[*] Request from user: {addr}")
+        proxy = False
+        if req_method == b'GET':
+            ctype, resdata, proxy = process_get_request(conn, req_url,data)
+        elif req_method == b'POST':
+            process_post_request(conn, req_url, data)
+            return
+        else:
+            # Return a 403 Forbidden response for unsupported methods
+            with open("error403.html", 'r') as f:
+                resdata = f.read()
+            ctype = "text/html"
+            send_response(conn, b"403 Forbidden", ctype, resdata.encode())
+            conn.close()
+            return
+        if proxy == False:    
+            send_response(conn, b"200", ctype, resdata)
+            conn.close()
+        return
+
 def main():
     if len(sys.argv) != 3:
         print("Usage: python server.py <HOST> <PORT>")
@@ -127,40 +158,10 @@ def main():
     print(f'Server running on {HOST}:{PORT}')
 
     s.listen(5)
-
     while True:
-        conn, addr = s.accept()
-
-        while True:
-            data = conn.recv(4096)
-            if not data:
-                break
-
-            print(data.decode())
-
-            request = data.split(b'\r\n')[0]
-            req_method = request.split(b' ')[0]
-            req_url = request.split(b' ')[1]
-            #proxy_url = request.split(b' ')[1]
-            print(f"[*] Request from user: {addr}")
-            proxy = False
-            if req_method == b'GET':
-                ctype, resdata, proxy = process_get_request(conn, req_url,data)
-            elif req_method == b'POST':
-                process_post_request(conn, req_url, data)
-                break
-            else:
-                # Return a 403 Forbidden response for unsupported methods
-                with open("error403.html", 'r') as f:
-                    resdata = f.read()
-                ctype = "text/html"
-                send_response(conn, b"403 Forbidden", ctype, resdata.encode())
-                conn.close()
-                break
-            if proxy == False:    
-                send_response(conn, b"200", ctype, resdata)
-            conn.close()
-            break
+        client, caddr = s.accept()
+        thread = threading.Thread(target=process, args=(client,caddr))
+        thread.start()
 
 if __name__ == "__main__":
     main()
