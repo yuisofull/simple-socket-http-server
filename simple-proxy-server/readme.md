@@ -52,7 +52,33 @@ Replace `<HOST>` and `<PORT>` with the desired host and port number on which you
 
 ### HTTP Server for Static Files
 
-- The proxy server can also serve static files. When clients request static files that exist on the server, the proxy will serve the files directly without the need for forwarding the request to a web server.
+The proxy server can work as an HTTP server with the following additional features:
+
+#### Submit Feature
+
+To save a message in a server text file, use the following `curl` command:
+
+```bash
+curl -X POST -d "HELLO WORLD" <url>/submit
+```
+
+#### Upload Feature
+
+To upload a file and save it under a specified file name, use the following `curl` command:
+
+```bash
+curl -H "File-Name: <file name>" --data-binary @<file path> <url>
+```
+
+#### Download Feature
+
+To download an uploaded file, use the following `curl` command:
+
+```bash
+curl <url>/<uploaded file name>
+```
+
+Alternatively, you can open your browser and go to `<url>/<uploaded file name>` to download the file.
 
 ## Example Usage
 
@@ -64,13 +90,13 @@ python proxy.py 127.0.0.1 8888
 
 2. Set your web browser or application to use the proxy server at `127.0.0.1:8888`.
 
-3. Access web resources as usual through your browser or application. The proxy server will handle caching and access control based on the configuration in `config.ini`. It will also serve static files directly when appropriate.
+3. Access web resources as usual through your browser or application. The proxy server will handle caching, access control, and also serve static files with the additional features described above.
 
 4. Modify the `config.ini` file to customize cache time, whitelist URLs, and time restrictions according to your needs.
 
 ## Notes
 
-- The proxy server supports `GET`, `HEAD`, and `POST` methods. Unsupported methods will receive a "403 Forbidden" response.
+- The proxy server supports `GET`, `HEAD`, `POST`, and additional features such as `SUBMIT` and `UPLOAD`. Unsupported methods will receive a "403 Forbidden" response.
 - The proxy server will close the connection after each request-response cycle.
 
 Please feel free to customize and use this web proxy server to meet your specific requirements. If you have any questions or need further assistance, don't hesitate to reach out. Happy proxying!
