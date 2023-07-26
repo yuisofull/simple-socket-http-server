@@ -1,8 +1,9 @@
 import socket
 import sys
 import threading
-import time
+import time as pytime
 import configparser
+from datetime import datetime, time 
 
 def read_config_file(filename):
     config = configparser.ConfigParser()
@@ -14,14 +15,16 @@ def read_config_file(filename):
     time = config.get('default', 'time')
     timeout = int(config.get('default', 'timeout'))
     enabling_whitelist = config.getboolean('default', 'enabling_whitelist')
+    time_restriction = config.getboolean('default', 'time_restriction')
 
     # Process the whitelisting string into a list
     whitelist_items = [item.strip() for item in whitelisting.split(',')]
+    timelist=[timeline.strip() for timeline in time.split('-')]
 
-    return cache_time, whitelist_items, time, timeout, enabling_whitelist
+    return cache_time, whitelist_items, timelist, timeout, enabling_whitelist, time_restriction
 
 file_path = 'config.ini'
-cache_time, whitelist, allow_time,timeout, enabling_whitelist = read_config_file(file_path)
+cache_time, whitelist, allow_time,timeout, enabling_whitelist, time_restriction = read_config_file(file_path)
 
 def send_response(conn, status_code, content_type, response_data):
     header = f"HTTP/1.1 {status_code}\r\n"
@@ -41,10 +44,19 @@ def send_error_response(conn):
 cache = {}
 def is_cache_valid(url):
     if url in cache:
-        current_time = time.time()
+        current_time = pytime.time()
         last_update_time = cache[url]["last_update_time"]
         if current_time - last_update_time < cache_time:
             return True
+    return False
+
+def is_in_allowing_time(t):
+    if not time_restriction:
+        return True
+    time1 = time(int(allow_time[0]),0,0)
+    time2 = time(int(allow_time[1]),0,0)
+    if time1 <= t <= time2:
+        return True
     return False
 
 def is_in_whitelist(url):
@@ -61,7 +73,10 @@ def proxy(conn, proxy_url,data):
         temp = proxy_url.decode()
     else:
         temp = proxy_url.decode()[(http_pos+3):] # get the rest of url
-
+    if not is_in_allowing_time(datetime.now().time()):
+        send_error_response(conn)
+        conn.close()
+        return
     if is_cache_valid(temp):
         print(f"[*] SENDING CACHED RESPONSE FOR: {temp}")
         conn.send(cache[temp]["cache"])
@@ -118,7 +133,7 @@ def proxy(conn, proxy_url,data):
         conn.send(res) # send to browser/client   
         cache[url]={
             "cache": res,
-            "last_update_time": time.time() 
+            "last_update_time": pytime.time() 
         }
         sv.close()
         conn.close()
