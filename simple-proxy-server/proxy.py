@@ -1,6 +1,7 @@
 import socket
 import sys
 import threading
+import time
 
 def send_response(conn, status_code, content_type, response_data):
     header = f"HTTP/1.1 {status_code}\r\n"
@@ -11,6 +12,16 @@ def send_response(conn, status_code, content_type, response_data):
     conn.send(response)
     return response.decode()
 
+cache = {}
+def is_cache_valid(url):
+    if url in cache:
+        current_time = time.time()
+        last_update_time = cache[url]["last_update_time"]
+        cache_time = 15 * 60  # 15 minutes in seconds
+        if current_time - last_update_time < cache_time:
+            return True
+    return False
+
 def proxy(conn, proxy_url,data):
     request = data.split(b'\r\n')[0]
     req_method = request.split(b' ')[0]
@@ -19,48 +30,60 @@ def proxy(conn, proxy_url,data):
         temp = proxy_url.decode()
     else:
         temp = proxy_url.decode()[(http_pos+3):] # get the rest of url
-    port_pos = temp.find(":") # find the port pos (if any)
-    # find end of web server
-    webserver_pos = temp.find("/")
-    if webserver_pos == -1:
-        webserver_pos = len(temp)
+    if is_cache_valid(temp):
+        print(f"[*] SENDING CACHED RESPONSE FOR: {temp}")
+        conn.send(cache[temp]["cache"])
+        conn.close()
+    else:
+        url=temp
+        port_pos = temp.find(":") # find the port pos (if any)
+        # find end of web server
+        webserver_pos = temp.find("/")
+        if webserver_pos == -1:
+            webserver_pos = len(temp)
 
-    webserver = ""
-    port = -1
-    if (port_pos==-1 or webserver_pos < port_pos): 
+        webserver = ""
+        port = -1
+        if (port_pos==-1 or webserver_pos < port_pos): 
 
-        # default port 
-        port = 80 
-        webserver = temp[:webserver_pos] 
-        tail = temp[webserver_pos:]
-    else: # specific port 
-        port = int((temp[(port_pos+1):])[:webserver_pos-port_pos-1])
-        webserver = temp[:port_pos] 
-        tail = temp[webserver_pos:]
-    sv = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
-    #s.settimeout(config['CONNECTION_TIMEOUT'])
-    sv.connect((webserver, port))
-    firstline = f"{req_method.decode()} {tail} {request.split(b' ')[2].decode()}"
-    secondline = f"Host: {webserver}:{port}"
-    headers = data.split(b'\r\n\r\n')
-    temp = headers[0].split(b'\r\n')
-    temp[0] = firstline.encode()
-    temp[1] = secondline.encode()
-    temp = b'\r\n'.join(temp)+ b'\r\n'+ b'Connection: Close' + b"\r\n\r\n" +headers[1]
-    #proxy_res= firstline.encode() + temp.encode()
-    print(f"SERVER REQUEST: \n{temp.decode()}")
-    sv.send(temp)
-    while True:
-        # receive data from web server
-        res = sv.recv(4096)
-        if (len(res)<=0): break
-        try:
-            print(f"SERVER RESPONES: \n{res.decode()}")
-        except:
-            print(f"SERVER RESPONES: \n{res.decode('latin1')}")
+            # default port 
+            port = 80 
+            webserver = temp[:webserver_pos] 
+            tail = temp[webserver_pos:]
+        else: # specific port 
+            port = int((temp[(port_pos+1):])[:webserver_pos-port_pos-1])
+            webserver = temp[:port_pos] 
+            tail = temp[webserver_pos:]
+        sv = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
+        #s.settimeout(config['CONNECTION_TIMEOUT'])
+        sv.connect((webserver, port))
+        firstline = f"{req_method.decode()} {tail} {request.split(b' ')[2].decode()}"
+        secondline = f"Host: {webserver}:{port}"
+        headers = data.split(b'\r\n\r\n')
+        temp = headers[0].split(b'\r\n')
+        temp[0] = firstline.encode()
+        temp[1] = secondline.encode()
+        temp = b'\r\n'.join(temp)+ b'\r\n'+ b'Connection: Close' + b"\r\n\r\n" +headers[1]
+        #proxy_res= firstline.encode() + temp.encode()
+        print(f"SENDING REQUEST TO WEB SERVER: \n{temp.decode()}")
+        sv.send(temp)
+        res=b""
+        while True:
+            # receive data from web server
+            temp=sv.recv(4096)
+            res = res+temp
+            if (len(temp)<=0): break
+            try:
+                print(f"RECIVED WEB SERVER RESPONSE: \n{temp.decode()}")
+            except:
+                print(f"RECIVED WEB SERVER RESPONSE: \n{temp.decode('latin1')}")
         conn.send(res) # send to browser/client   
-    sv.close()
-    conn.close()
+        cache[url]={
+            "cache": res,
+            "last_update_time": time.time() 
+        }
+        sv.close()
+        conn.close()
 
 def process_get_request(conn, req_url,data):
     req_url1 = req_url.strip(b'/')
@@ -83,6 +106,32 @@ def process_get_request(conn, req_url,data):
         return ctype, b'', True
 
     return ctype, resdata, False
+
+def process_head_request(conn, req_url,data):
+    req_url1 = req_url.strip(b'/')
+    if req_url1 == b"":
+        url = 'index.html'
+        ctype = "text/html"
+    elif req_url1 == b"favicon.ico":
+        url = req_url1.decode()
+        ctype = "image/x-icon"
+    else:
+        url = req_url1.decode()
+        ctype = "application/x-www-form-urlencoded"
+
+    try:
+        with open(url, 'rb') as f:
+            resdata = f.read()
+    except IOError:
+        # Handle proxy 
+        proxy(conn, req_url,data)
+        return True
+    header = f"HTTP/1.1 200\r\n"
+    header += f"Content-Length: {len(resdata)}\r\n"
+    header += f"Content-Type: {ctype}\r\n\r\n"
+    conn.send(header.encode())
+    conn.close()
+    return True
 
 def process_post_request(conn, req_url, data):
     
@@ -142,6 +191,8 @@ def process(conn, addr):
         proxy = False
         if req_method == b'GET':
             ctype, resdata, proxy = process_get_request(conn, req_url,data)
+        elif req_method == b'HEAD':
+            proxy = process_head_request(conn, req_url,data)
         elif req_method == b'POST':
             process_post_request(conn, req_url.strip(b'/'), data)
             return
