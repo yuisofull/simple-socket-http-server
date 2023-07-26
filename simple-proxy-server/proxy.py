@@ -41,9 +41,11 @@ def proxy(conn, proxy_url,data):
     #s.settimeout(config['CONNECTION_TIMEOUT'])
     sv.connect((webserver, port))
     firstline = f"{req_method.decode()} {tail} {request.split(b' ')[2].decode()}"
+    secondline = f"Host: {webserver}:{port}"
     headers = data.split(b'\r\n\r\n')
     temp = headers[0].split(b'\r\n')
     temp[0] = firstline.encode()
+    temp[1] = secondline.encode()
     temp = b'\r\n'.join(temp)+ b'\r\n'+ b'Connection: Close' + b"\r\n\r\n" +headers[1]
     #proxy_res= firstline.encode() + temp.encode()
     print(f"SERVER REQUEST: \n{temp.decode()}")
@@ -52,7 +54,10 @@ def proxy(conn, proxy_url,data):
         # receive data from web server
         res = sv.recv(4096)
         if (len(res)<=0): break
-        print(f"SERVER RESPONES: \n{res.decode()}")
+        try:
+            print(f"SERVER RESPONES: \n{res.decode()}")
+        except:
+            print(f"SERVER RESPONES: \n{res.decode('latin1')}")
         conn.send(res) # send to browser/client   
     sv.close()
     conn.close()
