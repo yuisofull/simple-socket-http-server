@@ -1,6 +1,6 @@
 # Web Proxy Server with Caching and Time-based Access Control
 
-This is a Python web proxy server that provides caching functionality and time-based access control. The proxy server allows clients to access web resources through it, and it caches the responses from web servers to improve response time for subsequent requests. Additionally, the proxy server can limit access based on specified time ranges.
+This is a Python web proxy server that provides caching functionality, time-based access control, and also works as an HTTP server for serving static files. The proxy server allows clients to access web resources through it, and it caches the responses from web servers to improve response time for subsequent requests. Additionally, the proxy server can limit access based on specified time ranges and serve static files when appropriate.
 
 ## Requirements
 
@@ -50,6 +50,10 @@ Replace `<HOST>` and `<PORT>` with the desired host and port number on which you
 
 - Optionally, the proxy server can enforce URL whitelisting (`whitelisting` in `config.ini`). If enabled (`enabling_whitelist = True` in `config.ini`), only requests to URLs listed in the whitelist will be allowed, and requests to other URLs will receive a "403 Forbidden" response.
 
+### HTTP Server for Static Files
+
+- The proxy server can also serve static files. When clients request static files that exist on the server, the proxy will serve the files directly without the need for forwarding the request to a web server.
+
 ## Example Usage
 
 1. Start the proxy server by running:
@@ -60,7 +64,7 @@ python proxy.py 127.0.0.1 8888
 
 2. Set your web browser or application to use the proxy server at `127.0.0.1:8888`.
 
-3. Access web resources as usual through your browser or application. The proxy server will handle caching and access control based on the configuration in `config.ini`.
+3. Access web resources as usual through your browser or application. The proxy server will handle caching and access control based on the configuration in `config.ini`. It will also serve static files directly when appropriate.
 
 4. Modify the `config.ini` file to customize cache time, whitelist URLs, and time restrictions according to your needs.
 
