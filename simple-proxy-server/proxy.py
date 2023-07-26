@@ -2,6 +2,26 @@ import socket
 import sys
 import threading
 import time
+import configparser
+
+def read_config_file(filename):
+    config = configparser.ConfigParser()
+    config.read(filename)
+
+    # Get values from the "default" section
+    cache_time = config.getint('default', 'cache_time')
+    whitelisting = config.get('default', 'whitelisting')
+    time = config.get('default', 'time')
+    timeout = int(config.get('default', 'timeout'))
+    enabling_whitelist = config.getboolean('default', 'enabling_whitelist')
+
+    # Process the whitelisting string into a list
+    whitelist_items = [item.strip() for item in whitelisting.split(',')]
+
+    return cache_time, whitelist_items, time, timeout, enabling_whitelist
+
+file_path = 'config.ini'
+cache_time, whitelist, allow_time,timeout, enabling_whitelist = read_config_file(file_path)
 
 def send_response(conn, status_code, content_type, response_data):
     header = f"HTTP/1.1 {status_code}\r\n"
@@ -12,13 +32,24 @@ def send_response(conn, status_code, content_type, response_data):
     conn.send(response)
     return response.decode()
 
+def send_error_response(conn):
+    with open("error403.html", 'r') as f:
+        resdata = f.read()
+    ctype = "text/html"
+    send_response(conn, b"403 Forbidden", ctype, resdata.encode())
+
 cache = {}
 def is_cache_valid(url):
     if url in cache:
         current_time = time.time()
         last_update_time = cache[url]["last_update_time"]
-        cache_time = 15 * 60  # 15 minutes in seconds
         if current_time - last_update_time < cache_time:
+            return True
+    return False
+
+def is_in_whitelist(url):
+    for link in whitelist:
+        if url in link:
             return True
     return False
 
@@ -30,32 +61,39 @@ def proxy(conn, proxy_url,data):
         temp = proxy_url.decode()
     else:
         temp = proxy_url.decode()[(http_pos+3):] # get the rest of url
+
     if is_cache_valid(temp):
         print(f"[*] SENDING CACHED RESPONSE FOR: {temp}")
         conn.send(cache[temp]["cache"])
         conn.close()
-    else:
-        url=temp
-        port_pos = temp.find(":") # find the port pos (if any)
-        # find end of web server
-        webserver_pos = temp.find("/")
-        if webserver_pos == -1:
-            webserver_pos = len(temp)
+        return    
+    url=temp
+    port_pos = temp.find(":") # find the port pos (if any)
+    # find end of web server
+    webserver_pos = temp.find("/")
+    if webserver_pos == -1:
+        webserver_pos = len(temp)
 
-        webserver = ""
-        port = -1
-        if (port_pos==-1 or webserver_pos < port_pos): 
+    webserver = ""
+    port = -1
+    if (port_pos==-1 or webserver_pos < port_pos): 
 
-            # default port 
-            port = 80 
-            webserver = temp[:webserver_pos] 
-            tail = temp[webserver_pos:]
-        else: # specific port 
-            port = int((temp[(port_pos+1):])[:webserver_pos-port_pos-1])
-            webserver = temp[:port_pos] 
-            tail = temp[webserver_pos:]
-        sv = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
-        #s.settimeout(config['CONNECTION_TIMEOUT'])
+        # default port 
+        port = 80 
+        webserver = temp[:webserver_pos] 
+        tail = temp[webserver_pos:]
+    else: # specific port 
+        port = int((temp[(port_pos+1):])[:webserver_pos-port_pos-1])
+        webserver = temp[:port_pos] 
+        tail = temp[webserver_pos:]
+    if enabling_whitelist:
+        if not is_in_whitelist(webserver):
+            send_error_response(conn)
+            conn.close()
+            return
+    sv = socket.socket(socket.AF_INET, socket.SOCK_STREAM) 
+    sv.settimeout(timeout)
+    try:
         sv.connect((webserver, port))
         firstline = f"{req_method.decode()} {tail} {request.split(b' ')[2].decode()}"
         secondline = f"Host: {webserver}:{port}"
@@ -82,6 +120,11 @@ def proxy(conn, proxy_url,data):
             "cache": res,
             "last_update_time": time.time() 
         }
+        sv.close()
+        conn.close()
+    except socket.timeout:
+        send_error_response(conn)
+        print("Connection timed out. Unable to connect to the server.")
         sv.close()
         conn.close()
 
@@ -169,10 +212,7 @@ def process_post_request(conn, req_url, data):
             proxy(conn, req_url, data)
         except:
             # Return a 403 Forbidden response for unknown POST requests
-            with open("error403.html", 'r') as f:
-                resdata = f.read()
-            ctype = "text/html"
-            send_response(conn, b"403 Forbidden", ctype, resdata.encode())
+            send_error_response(conn)
             conn.close()
 
 def process(conn, addr):
@@ -198,10 +238,7 @@ def process(conn, addr):
             return
         else:
             # Return a 403 Forbidden response for unsupported methods
-            with open("error403.html", 'r') as f:
-                resdata = f.read()
-            ctype = "text/html"
-            send_response(conn, "403 Forbidden", ctype, resdata.encode())
+            send_error_response(conn)
             conn.close()
             return
         if proxy == False:    
